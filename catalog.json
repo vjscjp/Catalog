@@ -2,16 +2,19 @@
   "items": [{
     "item_id": 1,
     "name": "BB8 Toy",
+    "description": "This is a new Star Wars droid toy.",
     "price": 149.50,
     "image": "images/bb8.png"
   }, {
     "item_id": 2,
     "name": "Light Saber",
+    "description": "This is a new Star Wars lightsaber toy.",
     "price": 14.50,
     "image": "images/lightsaber.jpg"
   }, {
-    "item_id": 1,
+    "item_id": 3,
     "name": "Blaster",
+    "description": "This is Han Solos famous blaster toy.",
     "price": 20,
     "image": "images/blaster.jpg"
   }]
