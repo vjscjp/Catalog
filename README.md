@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Catalog API
 
 ## Overview

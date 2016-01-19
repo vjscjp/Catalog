@@ -3,16 +3,16 @@
     "item_id": 1,
     "name": "BB8 Toy",
     "price": 149.50,
-    "image": "images/bb8.png",
+    "image": "images/bb8.png"
   }, {
     "item_id": 2,
     "name": "Light Saber",
     "price": 14.50,
-    "image": "images/lightsaber.jpg",
+    "image": "images/lightsaber.jpg"
   }, {
     "item_id": 1,
     "name": "Blaster",
     "price": 20,
-    "image": "images/blaster.jpg",
+    "image": "images/blaster.jpg"
   }]
 }
