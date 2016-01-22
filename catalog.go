@@ -291,6 +291,7 @@ func getCatalog() (cat CatalogItems, e error) {
 		log.Error.Printf("Error from rows: %s", e.Error())
 		return
 	}
+	rows.Close()
 
 	return cis, nil
 }
