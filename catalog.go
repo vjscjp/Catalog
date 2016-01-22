@@ -255,9 +255,14 @@ func createDatabase() (e error) {
 
 // Get a single catalog row
 func getCatalogItem(item int) (ci CatalogItem, e error) {
-
-	// Querry the database for the given item number
-	return
+	//var ci CatalogItem
+	e = db.QueryRow("SELECT item_id, name, description, price, image FROM catalog WHERE item_id = ?", item).Scan(
+		&ci.ItemID, &ci.Name, &ci.Description, &ci.Price, &ci.Image)
+	if e != nil {
+		log.Error.Printf("Error reading database row for item %d: %s", item, e.Error())
+		return ci, e
+	}
+	return ci, nil
 }
 
 // Get the whole catalog from the database
@@ -302,23 +307,20 @@ func Catalog(w http.ResponseWriter, r *http.Request) {
 			itemNumber, _ = strconv.Atoi(uriSegments[3])
 		}
 		if itemNumber > 0 {
-			// TODO this section to be replaced by single row querry
-			cis, e := getCatalog()
+			// Send catalog by item_id
+			ci, e := getCatalogItem(itemNumber)
 			if e != nil {
-				log.Error.Printf("Error getting catalog items: %s", e.Error())
+				response := fmt.Sprintf("Error from database retrieving item_id %d: %s", itemNumber, e.Error())
+				w.Write([]byte(response))
 				return
 			}
-			// Send catalog by item_id
-			if len(cis.Items) >= itemNumber {
-				// TODO should query by item_id, rather than use array index
-				response, err := json.MarshalIndent(cis.Items[itemNumber-1], "", "    ")
-				if err != nil {
-					log.Error.Printf("Error marshalling returned catalog item %s", err.Error())
-					return
-				}
-				w.Write([]byte(response))
-				log.Info.Printf("Succesfully sent item_number: %d", itemNumber)
+			response, err := json.MarshalIndent(ci, "", "    ")
+			if err != nil {
+				log.Error.Printf("Error marshalling returned catalog item %s", err.Error())
+				return
 			}
+			w.Write([]byte(response))
+			log.Info.Printf("Succesfully sent item_number: %d", itemNumber)
 		} else {
 			// Send full catalog
 			cis, e := getCatalog()
