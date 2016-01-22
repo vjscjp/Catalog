@@ -9,15 +9,45 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+
+var
+// Create the catalog database
+func create_db () {
+
+}
+
+// Get environment variable.  Return error if not set.
+func getenv(name string) (val string, e error) {
+	val = os.Getenv(name)
+	if val == "" {
+		s := "Required environment variable not found: %s"
+		log.Error.Printf(s, name)
+		return "", fmt.Errorf(s, name)
+	}
+	return val, nil
+}
+
 func init_db() (db *sql.DB, e error) {
 
-	db_host := os.Getenv("SHIPPED_MYSQL_HOST")
-	db_schema := os.Getenv("SHIPPED_MYSQL_SCHEMA")
-	db_user := os.Getenv("SHIPPED_MYSQL_USER")
-	db_password := os.Getenv("SHIPPED_MYSQL_PASSWORD")
+	db_host, e := getenv("SHIPPED_MYSQL_HOST")
+	if e != nil {
+		return nil, e
+	}
+	db_schema, e := getenv("SHIPPED_MYSQL_SCHEMA")
+	if e != nil {
+		return nil, e
+	}
+	db_user, e := getenv("SHIPPED_MYSQL_USER")
+	if e != nil {
+		return nil, e
+	}
+	db_password, e := getenv("SHIPPED_MYSQL_PASSWORD")
+	if e != nil {
+		return nil, e
+	}
 
-	datastore := fmt.Sprintf("%s:%s@%s/%s", db_user, db_password, db_host, db_schema)
-	db, e = sql.Open("mysql", datastore)
+	cxn := fmt.Sprintf("%s:%s@%s/%s", db_user, db_password, db_host, db_schema)
+	db, e = sql.Open("mysql", cxn)
 	if e != nil {
 		log.Error.Printf("error getting db object: %s", e.Error())
 		return nil, e
@@ -35,11 +65,6 @@ func init_db() (db *sql.DB, e error) {
 // Read from one of the preinstalled tables
 func mysql() (e error) {
 	log.Info.Printf("Testing go and mysql")
-
-	os.Setenv("SHIPPED_MYSQL_HOST", "tcp(127.0.0.1:3306)")
-	os.Setenv("SHIPPED_MYSQL_SCHEMA", "sakila") // schema is database name
-	os.Setenv("SHIPPED_MYSQL_USER", "kr")
-	os.Setenv("SHIPPED_MYSQL_PASSWORD", "1111")
 
 	db, err := init_db()
 	if err != nil {
