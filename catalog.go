@@ -112,9 +112,9 @@ func Catalog(rw http.ResponseWriter, req *http.Request) {
 }
 
 func response(status string, code int, message string) []byte {
-	error := Response{status, code, message}
-	log.Println(error.Message)
-	response, _ := json.MarshalIndent(error, "", "    ")
+	resp := Response{status, code, message}
+	log.Println(resp.Message)
+	response, _ := json.MarshalIndent(resp, "", "    ")
 
 	return response
 }

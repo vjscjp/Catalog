@@ -31,7 +31,6 @@ Content-Type: text/html; charset=utf-8
 ```
 
 ## Endpoints
-
 - **GET /v1/catalog/1?mock=true**
 ```
 curl -i -X GET -H "Content-Type: application/json" http://localhost:8000/v1/catalog/1?mock=true
