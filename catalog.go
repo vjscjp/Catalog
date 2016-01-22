@@ -16,6 +16,8 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+var db *sql.DB // Database object designed to be long lived
+
 type CatalogItem struct {
 	Image       string  `json:"image"`
 	ItemID      int     `json:"item_id"`
@@ -24,7 +26,7 @@ type CatalogItem struct {
 	Price       float64 `json:"price"`
 }
 
-type CatalogType struct {
+type CatalogItems struct {
 	Items []CatalogItem `json:"items"`
 }
 
@@ -40,6 +42,12 @@ func main() {
 	e := createDatabase()
 	if e != nil {
 		log.Error.Printf("Error creating database: %s", e.Error())
+		os.Exit(1)
+	}
+
+	db, e = getDBObject()
+	if e != nil {
+		log.Error.Printf("Error getting db object: %s", e.Error())
 		os.Exit(1)
 	}
 
@@ -99,6 +107,32 @@ func getdbCreds() (creds dbCreds, e error) {
 	return x, nil
 }
 
+// Get a (long lived) database object
+func getDBObject() (db *sql.DB, e error) {
+	creds, e := getdbCreds()
+	if e != nil {
+		log.Error.Printf("Error getting database creds: %s", e.Error())
+		return
+	}
+
+	// Create the db object
+	cxn := fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, creds.db_schema)
+	dbx, e := sql.Open("mysql", cxn)
+	if e != nil {
+		log.Error.Printf("error getting db object: %s", e.Error())
+		return
+	}
+
+	// The db object does not actually connect to the database.
+	// Therefore, ping the database to ensure we can connect.
+	e = dbx.Ping()
+	if e != nil {
+		log.Error.Printf("Error from db.Ping: %s", e.Error())
+		return
+	}
+	return dbx, nil
+}
+
 // Create the shipped database if it does not exist
 // then populate the catalog table from the json defined rows
 func createDatabase() (e error) {
@@ -126,64 +160,64 @@ func createDatabase() (e error) {
 	// Initially the shipped catalog db may not exist,
 	// so connect with a database that will always exist.
 	cxn := fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, "information_schema")
-	db, e := sql.Open("mysql", cxn)
+	dbx, e := sql.Open("mysql", cxn)
 	if e != nil {
 		log.Error.Printf("error getting db object: %s", e.Error())
 		return e
 	}
-	defer db.Close()
+	defer dbx.Close()
 
 	// The db object does not actually connect to the database.
 	// Therefore, ping the database to ensure we can connect.
-	e = db.Ping()
+	e = dbx.Ping()
 	if e != nil {
 		log.Error.Printf("Error from db.Ping: %s", e.Error())
 		return e
 	}
 
 	// Create the database
-	_, e = db.Exec(fmt.Sprintf(create_database, creds.db_schema))
+	_, e = dbx.Exec(fmt.Sprintf(create_database, creds.db_schema))
 	if e != nil {
 		log.Error.Printf("Error creating database: %s", e.Error())
 		os.Exit(1)
 	}
 
 	// Close the old db object and get new one for shipped database.
-	db.Close()
+	dbx.Close()
 	cxn = fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, creds.db_schema)
-	db, e = sql.Open("mysql", cxn)
+	dbx, e = sql.Open("mysql", cxn)
 	if e != nil {
 		log.Error.Printf("error getting db object: %s", e.Error())
 		return e
 	}
-	defer db.Close()
+	defer dbx.Close()
 
 	// The db object does not actually connect to the database.
 	// Therefore, ping the database to ensure we can connect.
-	e = db.Ping()
+	e = dbx.Ping()
 	if e != nil {
 		log.Error.Printf("Error from db.Ping: %s", e.Error())
 		return e
 	}
 
 	// Create the catalog table
-	_, e = db.Exec(create_table)
+	_, e = dbx.Exec(create_table)
 	if e != nil {
 		log.Error.Printf("Error creating database: %s", e.Error())
 		return e
 	}
 
 	// Get database rows defined as json
-	var ct CatalogType
+	var cis CatalogItems
 	file, e := ioutil.ReadFile("./catalog.json")
 	if e != nil {
 		log.Error.Printf("Error reading catalog json file: %s", e.Error())
 		return e
 	}
-	json.Unmarshal(file, &ct)
+	json.Unmarshal(file, &cis)
 
 	// Get a database transaction (ensures all operations use same connection)
-	tx, e := db.Begin()
+	tx, e := dbx.Begin()
 	if e != nil {
 		log.Error.Printf("Error getting database transaction: %s", e.Error())
 		return e
@@ -199,7 +233,7 @@ func createDatabase() (e error) {
 	defer stmt.Close()
 
 	// Populate rows of catalog table
-	for _, item := range ct.Items {
+	for _, item := range cis.Items {
 		_, e = stmt.Exec(item.ItemID, item.Name, item.Description, item.Price, item.Image)
 		if e != nil {
 			log.Error.Printf("Error inserting row into catalog table: %s", e.Error())
@@ -214,48 +248,31 @@ func createDatabase() (e error) {
 	}
 
 	stmt.Close()
-	db.Close()
+	dbx.Close()
 
 	return nil
 }
 
-// Catalog this will return an item or the whole list
-func Catalog(w http.ResponseWriter, r *http.Request) {
+// Get a single catalog row
+func getCatalogItem(item int) (ci CatalogItem, e error) {
 
-	// Get the catalog from the database
-	creds, e := getdbCreds()
+	// Querry the database for the given item number
+	return
+}
+
+// Get the whole catalog from the database
+func getCatalog() (cat CatalogItems, e error) {
+
+	rows, e := db.Query("SELECT  item_id, name, description, price, image FROM catalog")
 	if e != nil {
-		log.Error.Printf("Error getting database creds: %s", e.Error())
-		return
-	}
-
-	// Get db object
-	// TODO Should we fetch db object just once in the beginning?
-	cxn := fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, creds.db_schema)
-	db, e := sql.Open("mysql", cxn)
-	if e != nil {
-		log.Error.Printf("error getting db object: %s", e.Error())
-		return
-	}
-	defer db.Close()
-
-	// The db object does not actually connect to the database.
-	// Therefore, ping the database to ensure we can connect.
-	e = db.Ping()
-	if e != nil {
-		log.Error.Printf("Error from db.Ping: %s", e.Error())
-		return
-	}
-
-	rows, err := db.Query("SELECT  item_id, name, description, price, image FROM catalog")
-	if err != nil {
-		log.Error.Printf("Error from db.Query: %s", err.Error())
+		log.Error.Printf("Error from db.Query: %s", e.Error())
 		return
 	}
 	defer rows.Close()
 
 	var ci CatalogItem
-	var cis CatalogType
+	var cis CatalogItems
+
 	for rows.Next() {
 		err := rows.Scan(&ci.ItemID, &ci.Name, &ci.Description, &ci.Price, &ci.Image)
 		if err != nil {
@@ -264,11 +281,17 @@ func Catalog(w http.ResponseWriter, r *http.Request) {
 		}
 		cis.Items = append(cis.Items, ci)
 	}
-	err = rows.Err()
-	if err != nil {
-		log.Error.Printf("Error from rows: %s", err.Error())
+	e = rows.Err()
+	if e != nil {
+		log.Error.Printf("Error from rows: %s", e.Error())
 		return
 	}
+
+	return cis, nil
+}
+
+// Catalog:  this will return an item or the whole list
+func Catalog(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case "GET":
@@ -279,6 +302,12 @@ func Catalog(w http.ResponseWriter, r *http.Request) {
 			itemNumber, _ = strconv.Atoi(uriSegments[3])
 		}
 		if itemNumber > 0 {
+			// TODO this section to be replaced by single row querry
+			cis, e := getCatalog()
+			if e != nil {
+				log.Error.Printf("Error getting catalog items: %s", e.Error())
+				return
+			}
 			// Send catalog by item_id
 			if len(cis.Items) >= itemNumber {
 				// TODO should query by item_id, rather than use array index
@@ -292,6 +321,11 @@ func Catalog(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			// Send full catalog
+			cis, e := getCatalog()
+			if e != nil {
+				log.Error.Printf("Error getting catalog items: %s", e.Error())
+				return
+			}
 			response, err := json.MarshalIndent(cis.Items, "", "    ")
 			if err != nil {
 				log.Error.Printf("Error marshalling returned catalog item %s", err.Error())
