@@ -60,31 +60,30 @@ func Catalog(rw http.ResponseWriter, req *http.Request) {
 		}
 
 		// Check if mock is set true
-		mock := req.URL.Query().Get("mock")
-		if len(mock) != 0 {
-			if mock == "true" {
-				if itemNumber > 0 {
-					// Send catalog by item_id
-					if len(catalog.Items) >= itemNumber {
-						response, err := json.MarshalIndent(catalog.Items[itemNumber-1], "", "    ")
-						if err != nil {
-							log.Println(err)
-							return
-						}
-						rw.WriteHeader(http.StatusAccepted)
-						rw.Write([]byte(response))
-						log.Println("Succesfully sent item_number:", itemNumber)
-					} else {
-						// item_id not found
-						rw.WriteHeader(http.StatusNotFound)
-						err := response(error, http.StatusMethodNotAllowed, "Item out of index")
-						rw.Write(err)
+		mock := mockCheck(req)
+		if mock == true {
+			if itemNumber > 0 {
+				// Send catalog by item_id
+				if len(catalog.Items) >= itemNumber {
+					response, err := json.MarshalIndent(catalog.Items[itemNumber-1], "", "    ")
+					if err != nil {
+						log.Println(err)
+						return
 					}
+					rw.WriteHeader(http.StatusAccepted)
+					rw.Write([]byte(response))
+					log.Println("Succesfully sent item_number:", itemNumber)
 				} else {
-					// Send full catalog
-					rw.Write([]byte(file))
+					// item_id not found
+					rw.WriteHeader(http.StatusNotFound)
+					err := response(error, http.StatusMethodNotAllowed, "Item out of index")
+					rw.Write(err)
 				}
+			} else {
+				// Send full catalog
+				rw.Write([]byte(file))
 			}
+
 		} else {
 			// Perform DB Query
 
@@ -117,6 +116,16 @@ func response(status string, code int, message string) []byte {
 	response, _ := json.MarshalIndent(resp, "", "    ")
 
 	return response
+}
+
+func mockCheck(req *http.Request) bool {
+	mock := req.URL.Query().Get("mock")
+	if len(mock) != 0 {
+		if mock == "true" {
+			return true
+		}
+	}
+	return false
 }
 
 func loadCatalog() []byte {
