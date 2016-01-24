@@ -31,25 +31,25 @@ Content-Type: text/html; charset=utf-8
 ```
 
 ## Endpoints
-
-- **GET /v1/catalog/{item_id}/**
+- **GET /v1/catalog/1?mock=true**
 ```
-curl -H "Content-Type: application/json" -X POST http://localhost:8000/v1/catalog/{item_id}
+curl -i -X GET -H "Content-Type: application/json" http://localhost:8000/v1/catalog/1?mock=true
 Expected Result:
+HTTP/1.1 202 Accepted
+Content-Type: application/json
 {
-    "success":true,
-    {
-      "item_id": 1,
-      "name": "BB8 Toy",
-      "price": 149.50,
-      "image": "images/bb8.png"
-    }
+  "item_id": 1,
+  "name": "BB8 Toy",
+  "price": 149.50,
+  "image": "images/bb8.png"
 }
 ```
-- **GET /v1/catalog/**
+- **GET /v1/catalog?mock=true**
 ```
-curl -H "Content-Type: application/json" -X GET http://localhost:8000/v1/catalog/
+curl -i -X GET -H "Content-Type: application/json" http://localhost:8000/v1/catalog/?mock=true
 Expected Result:
+HTTP/1.1 202 Accepted
+Content-Type: application/json
 {
   "items": [{
     "item_id": 1,

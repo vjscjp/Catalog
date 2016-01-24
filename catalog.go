@@ -18,6 +18,16 @@ import (
 
 var db *sql.DB // Database object designed to be long lived
 
+type CatalogType struct {
+	Items []struct {
+		Image       string  `json:"image"`
+		ItemID      int     `json:"item_id"`
+		Name        string  `json:"name"`
+		Descrpition string  `json:"description"`
+		Price       float64 `json:"price"`
+	} `json:"items"`
+}
+
 type CatalogItem struct {
 	Image       string  `json:"image"`
 	ItemID      int     `json:"item_id"`
@@ -37,6 +47,15 @@ type dbCreds struct {
 	db_host     string
 }
 
+type Response struct {
+	Status  string `json:"status"`
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+const errors = "ERROR"
+const success = "SUCCESS"
+
 func main() {
 
 	e := createDatabase()
@@ -55,23 +74,6 @@ func main() {
 	http.HandleFunc("/", HandleIndex)
 
 	http.ListenAndServe(":8000", nil)
-}
-
-// HandleIndex this is the index endpoint will return 200
-func HandleIndex(w http.ResponseWriter, r *http.Request) {
-	lp := path.Join("templates", "layout.html")
-	fp := path.Join("templates", "index.html")
-
-	// Note that the layout file must be the first parameter in ParseFiles
-	tmpl, err := template.ParseFiles(lp, fp)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if err := tmpl.Execute(w, nil); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
 }
 
 // Get environment variable.  Return error if not set.
@@ -136,21 +138,20 @@ func getDBObject() (db *sql.DB, e error) {
 // Create the shipped database if it does not exist
 // then populate the catalog table from the json defined rows
 func createDatabase() (e error) {
-	var create_database string = `
-	CREATE DATABASE IF NOT EXISTS %s`
+	var create_database string = `CREATE DATABASE IF NOT EXISTS %s`
 
-	var create_table string = `
-	CREATE TABLE IF NOT EXISTS catalog
-	(
-	item_id INT PRIMARY KEY,
-	name    VARCHAR(255) NOT NULL,
-	description VARCHAR(255) NOT NULL,
-	price   FLOAT NOT NULL,
-	image   VARCHAR(255)
-	)`
+	var create_table string = "" +
+		`
+		CREATE TABLE IF NOT EXISTS catalog
+		(
+		item_id INT PRIMARY KEY,
+		name    VARCHAR(255) NOT NULL,
+		description VARCHAR(255) NOT NULL,
+		price   FLOAT NOT NULL,
+		image   VARCHAR(255)
+		)`
 
-	var insert_table string = `
-	INSERT IGNORE INTO catalog (item_id, name, description, price, image) VALUES (?,?,?,?,?)`
+	var insert_table string = `INSERT IGNORE INTO catalog (item_id, name, description, price, image) VALUES (?,?,?,?,?)`
 
 	creds, e := getdbCreds()
 	if e != nil {
@@ -296,55 +297,150 @@ func getCatalog() (cat CatalogItems, e error) {
 	return cis, nil
 }
 
-// Catalog:  this will return an item or the whole list
-func Catalog(w http.ResponseWriter, r *http.Request) {
+// Catalog this will return an item or the whole list
+func Catalog(rw http.ResponseWriter, req *http.Request) {
+	rw.Header().Set("Content-Type", "application/json")
 
-	switch r.Method {
+	// Load JSON File
+	var catalog CatalogType
+	file := loadCatalog()
+	json.Unmarshal(file, &catalog)
+
+	switch req.Method {
+	//curl -X GET -H "Content-Type: application/json" http://localhost:8000/v1/catalog/3?mock=true
 	case "GET":
 		// Check Parameter
-		uriSegments := strings.Split(r.URL.Path, "/")
+		uriSegments := strings.Split(req.URL.Path, "/")
+
+		//  Get item number
 		var itemNumber = 0
 		if len(uriSegments) >= 3 {
 			itemNumber, _ = strconv.Atoi(uriSegments[3])
 		}
-		if itemNumber > 0 {
-			// Send catalog by item_id
-			ci, e := getCatalogItem(itemNumber)
-			if e != nil {
-				response := fmt.Sprintf("Error from database retrieving item_id %d: %s", itemNumber, e.Error())
-				w.Write([]byte(response))
-				return
+		// Check if mock is set true
+		mock := mockCheck(req)
+		if mock == true {
+			if itemNumber > 0 {
+				// Send catalog by item_id
+				if len(catalog.Items) >= itemNumber {
+					response, err := json.MarshalIndent(catalog.Items[itemNumber-1], "", "    ")
+					if err != nil {
+						log.Error.Println(err)
+						return
+					}
+					rw.WriteHeader(http.StatusAccepted)
+					rw.Write([]byte(response))
+					log.Error.Println("Succesfully sent item_number:", itemNumber)
+				} else {
+					// item_id not found
+					rw.WriteHeader(http.StatusNotFound)
+					err := response(errors, http.StatusMethodNotAllowed, "Item out of index")
+					rw.Write(err)
+				}
+			} else {
+				// Send full catalog
+				rw.Write([]byte(file))
 			}
-			response, err := json.MarshalIndent(ci, "", "    ")
-			if err != nil {
-				log.Error.Printf("Error marshalling returned catalog item %s", err.Error())
-				return
-			}
-			w.Write([]byte(response))
-			log.Info.Printf("Succesfully sent item_number: %d", itemNumber)
 		} else {
-			// Send full catalog
-			cis, e := getCatalog()
-			if e != nil {
-				log.Error.Printf("Error getting catalog items: %s", e.Error())
-				return
+			// Perform DB
+			if itemNumber > 0 {
+				// Send Item
+				ci, e := getCatalogItem(itemNumber)
+				if e != nil {
+					response := fmt.Sprintf("Error from database retrieving item_id %d: %s", itemNumber, e.Error())
+					rw.Write([]byte(response))
+					return
+				}
+				response, err := json.MarshalIndent(ci, "", "    ")
+				if err != nil {
+					log.Error.Printf("Error marshalling returned catalog item %s", err.Error())
+					return
+				}
+				rw.Write([]byte(response))
+				log.Info.Printf("Succesfully sent item_number: %d", itemNumber)
+			} else {
+				// Send Catalog
+				cis, e := getCatalog()
+				if e != nil {
+					log.Error.Printf("Error getting catalog items: %s", e.Error())
+					return
+				}
+				response, err := json.MarshalIndent(cis.Items, "", "    ")
+				if err != nil {
+					log.Error.Printf("Error marshalling returned catalog item %s", err.Error())
+					return
+				}
+				rw.Write([]byte(response))
+				log.Info.Printf("Succesfully sent %d catalog items", len(cis.Items))
 			}
-			response, err := json.MarshalIndent(cis.Items, "", "    ")
-			if err != nil {
-				log.Error.Printf("Error marshalling returned catalog item %s", err.Error())
-				return
-			}
-			w.Write([]byte(response))
-			log.Info.Printf("Succesfully sent %d catalog items", len(cis.Items))
 		}
 	case "POST":
-		// Do we want to create records?
+		rw.WriteHeader(http.StatusMethodNotAllowed)
+		err := response(errors, http.StatusMethodNotAllowed, req.Method+" not allowed")
+		rw.Write(err)
 	case "PUT":
 		// Update an existing record.
+		rw.WriteHeader(http.StatusMethodNotAllowed)
+		err := response(errors, http.StatusMethodNotAllowed, req.Method+" not allowed")
+		rw.Write(err)
 	case "DELETE":
 		// Remove the record.
+		rw.WriteHeader(http.StatusMethodNotAllowed)
+		err := response(errors, http.StatusMethodNotAllowed, req.Method+" not allowed")
+		rw.Write(err)
 	default:
 		// Give an error message.
-		w.Write([]byte(fmt.Sprintf("Error: Unsupported HTTP method: %s", r.Method)))
+		rw.WriteHeader(http.StatusBadRequest)
+		err := response(errors, http.StatusBadRequest, "Bad request")
+		rw.Write(err)
 	}
+}
+
+func response(status string, code int, message string) []byte {
+	resp := Response{status, code, message}
+	log.Error.Println(resp.Message)
+	response, _ := json.MarshalIndent(resp, "", "    ")
+
+	return response
+}
+
+func mockCheck(req *http.Request) bool {
+	mock := req.URL.Query().Get("mock")
+	if len(mock) != 0 {
+		if mock == "true" {
+			return true
+		}
+	}
+	return false
+}
+
+func loadCatalog() []byte {
+	file, e := ioutil.ReadFile("./catalog.json")
+	if e != nil {
+		log.Error.Printf("File error: %v\n", e)
+		os.Exit(1)
+	}
+	return file
+}
+
+// HandleIndex this is the index endpoint will return 200
+func HandleIndex(rw http.ResponseWriter, req *http.Request) {
+	lp := path.Join("templates", "layout.html")
+	fp := path.Join("templates", "index.html")
+
+	// Note that the layout file must be the first parameter in ParseFiles
+	tmpl, err := template.ParseFiles(lp, fp)
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := tmpl.Execute(rw, nil); err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+	}
+
+	// Give a success message.
+	rw.WriteHeader(http.StatusOK)
+	success := response(success, http.StatusOK, "Ready for request.")
+	rw.Write(success)
 }
