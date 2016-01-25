@@ -12,7 +12,8 @@ import (
 	"strings"
 	"text/template"
 
-	log "github.com/CiscoCloud/shipped-common/logging"
+	"log"
+
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -60,13 +61,13 @@ func main() {
 
 	e := createDatabase()
 	if e != nil {
-		log.Error.Printf("Error creating database: %s", e.Error())
+		log.Printf("Error creating database: %s", e.Error())
 		os.Exit(1)
 	}
 
 	db, e = getDBObject()
 	if e != nil {
-		log.Error.Printf("Error getting db object: %s", e.Error())
+		log.Printf("Error getting db object: %s", e.Error())
 		os.Exit(1)
 	}
 
@@ -81,7 +82,7 @@ func getenv(name string) (val string, e error) {
 	val = os.Getenv(name)
 	if val == "" {
 		s := "Required environment variable not found: %s"
-		log.Error.Printf(s, name)
+		log.Printf(s, name)
 		return "", fmt.Errorf(s, name)
 	}
 	return val, nil
@@ -113,7 +114,7 @@ func getdbCreds() (creds dbCreds, e error) {
 func getDBObject() (db *sql.DB, e error) {
 	creds, e := getdbCreds()
 	if e != nil {
-		log.Error.Printf("Error getting database creds: %s", e.Error())
+		log.Printf("Error getting database creds: %s", e.Error())
 		return
 	}
 
@@ -121,7 +122,7 @@ func getDBObject() (db *sql.DB, e error) {
 	cxn := fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, creds.db_schema)
 	dbx, e := sql.Open("mysql", cxn)
 	if e != nil {
-		log.Error.Printf("error getting db object: %s", e.Error())
+		log.Printf("error getting db object: %s", e.Error())
 		return
 	}
 
@@ -129,7 +130,7 @@ func getDBObject() (db *sql.DB, e error) {
 	// Therefore, ping the database to ensure we can connect.
 	e = dbx.Ping()
 	if e != nil {
-		log.Error.Printf("Error from db.Ping: %s", e.Error())
+		log.Printf("Error from db.Ping: %s", e.Error())
 		return
 	}
 	return dbx, nil
@@ -163,7 +164,7 @@ func createDatabase() (e error) {
 	cxn := fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, "information_schema")
 	dbx, e := sql.Open("mysql", cxn)
 	if e != nil {
-		log.Error.Printf("error getting db object: %s", e.Error())
+		log.Printf("error getting db object: %s", e.Error())
 		return e
 	}
 	defer dbx.Close()
@@ -172,14 +173,14 @@ func createDatabase() (e error) {
 	// Therefore, ping the database to ensure we can connect.
 	e = dbx.Ping()
 	if e != nil {
-		log.Error.Printf("Error from db.Ping: %s", e.Error())
+		log.Printf("Error from db.Ping: %s", e.Error())
 		return e
 	}
 
 	// Create the database
 	_, e = dbx.Exec(fmt.Sprintf(create_database, creds.db_schema))
 	if e != nil {
-		log.Error.Printf("Error creating database: %s", e.Error())
+		log.Printf("Error creating database: %s", e.Error())
 		os.Exit(1)
 	}
 
@@ -188,7 +189,7 @@ func createDatabase() (e error) {
 	cxn = fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, creds.db_schema)
 	dbx, e = sql.Open("mysql", cxn)
 	if e != nil {
-		log.Error.Printf("error getting db object: %s", e.Error())
+		log.Printf("error getting db object: %s", e.Error())
 		return e
 	}
 	defer dbx.Close()
@@ -197,14 +198,14 @@ func createDatabase() (e error) {
 	// Therefore, ping the database to ensure we can connect.
 	e = dbx.Ping()
 	if e != nil {
-		log.Error.Printf("Error from db.Ping: %s", e.Error())
+		log.Printf("Error from db.Ping: %s", e.Error())
 		return e
 	}
 
 	// Create the catalog table
 	_, e = dbx.Exec(create_table)
 	if e != nil {
-		log.Error.Printf("Error creating database: %s", e.Error())
+		log.Printf("Error creating database: %s", e.Error())
 		return e
 	}
 
@@ -212,7 +213,7 @@ func createDatabase() (e error) {
 	var cis CatalogItems
 	file, e := ioutil.ReadFile("./catalog.json")
 	if e != nil {
-		log.Error.Printf("Error reading catalog json file: %s", e.Error())
+		log.Printf("Error reading catalog json file: %s", e.Error())
 		return e
 	}
 	json.Unmarshal(file, &cis)
@@ -220,7 +221,7 @@ func createDatabase() (e error) {
 	// Get a database transaction (ensures all operations use same connection)
 	tx, e := dbx.Begin()
 	if e != nil {
-		log.Error.Printf("Error getting database transaction: %s", e.Error())
+		log.Printf("Error getting database transaction: %s", e.Error())
 		return e
 	}
 	defer tx.Rollback()
@@ -228,7 +229,7 @@ func createDatabase() (e error) {
 	// Prepare insert command
 	stmt, e := tx.Prepare(insert_table)
 	if e != nil {
-		log.Error.Printf("Error creating prepared statement: %s", e.Error())
+		log.Printf("Error creating prepared statement: %s", e.Error())
 		return e
 	}
 	defer stmt.Close()
@@ -237,14 +238,14 @@ func createDatabase() (e error) {
 	for _, item := range cis.Items {
 		_, e = stmt.Exec(item.ItemID, item.Name, item.Description, item.Price, item.Image)
 		if e != nil {
-			log.Error.Printf("Error inserting row into catalog table: %s", e.Error())
+			log.Printf("Error inserting row into catalog table: %s", e.Error())
 			return e
 		}
 	}
 
 	e = tx.Commit()
 	if e != nil {
-		log.Error.Printf("Error during transaction commit: %s", e.Error())
+		log.Printf("Error during transaction commit: %s", e.Error())
 		return e
 	}
 
@@ -260,7 +261,7 @@ func getCatalogItem(item int) (ci CatalogItem, e error) {
 	e = db.QueryRow("SELECT item_id, name, description, price, image FROM catalog WHERE item_id = ?", item).Scan(
 		&ci.ItemID, &ci.Name, &ci.Description, &ci.Price, &ci.Image)
 	if e != nil {
-		log.Error.Printf("Error reading database row for item %d: %s", item, e.Error())
+		log.Printf("Error reading database row for item %d: %s", item, e.Error())
 		return ci, e
 	}
 	return ci, nil
@@ -271,7 +272,7 @@ func getCatalog() (cat CatalogItems, e error) {
 
 	rows, e := db.Query("SELECT  item_id, name, description, price, image FROM catalog")
 	if e != nil {
-		log.Error.Printf("Error from db.Query: %s", e.Error())
+		log.Printf("Error from db.Query: %s", e.Error())
 		return
 	}
 	defer rows.Close()
@@ -282,14 +283,14 @@ func getCatalog() (cat CatalogItems, e error) {
 	for rows.Next() {
 		err := rows.Scan(&ci.ItemID, &ci.Name, &ci.Description, &ci.Price, &ci.Image)
 		if err != nil {
-			log.Error.Printf("Error from rows.Scan: %s", err.Error())
+			log.Printf("Error from rows.Scan: %s", err.Error())
 			return
 		}
 		cis.Items = append(cis.Items, ci)
 	}
 	e = rows.Err()
 	if e != nil {
-		log.Error.Printf("Error from rows: %s", e.Error())
+		log.Printf("Error from rows: %s", e.Error())
 		return
 	}
 	rows.Close()
@@ -325,12 +326,12 @@ func Catalog(rw http.ResponseWriter, req *http.Request) {
 				if len(catalog.Items) >= itemNumber {
 					response, err := json.MarshalIndent(catalog.Items[itemNumber-1], "", "    ")
 					if err != nil {
-						log.Error.Println(err)
+						log.Println(err)
 						return
 					}
 					rw.WriteHeader(http.StatusAccepted)
 					rw.Write([]byte(response))
-					log.Error.Println("Succesfully sent item_number:", itemNumber)
+					log.Println("Succesfully sent item_number:", itemNumber)
 				} else {
 					// item_id not found
 					rw.WriteHeader(http.StatusNotFound)
@@ -353,25 +354,25 @@ func Catalog(rw http.ResponseWriter, req *http.Request) {
 				}
 				response, err := json.MarshalIndent(ci, "", "    ")
 				if err != nil {
-					log.Error.Printf("Error marshalling returned catalog item %s", err.Error())
+					log.Printf("Error marshalling returned catalog item %s", err.Error())
 					return
 				}
 				rw.Write([]byte(response))
-				log.Info.Printf("Succesfully sent item_number: %d", itemNumber)
+				log.Printf("Succesfully sent item_number: %d", itemNumber)
 			} else {
 				// Send Catalog
 				cis, e := getCatalog()
 				if e != nil {
-					log.Error.Printf("Error getting catalog items: %s", e.Error())
+					log.Printf("Error getting catalog items: %s", e.Error())
 					return
 				}
 				response, err := json.MarshalIndent(cis.Items, "", "    ")
 				if err != nil {
-					log.Error.Printf("Error marshalling returned catalog item %s", err.Error())
+					log.Printf("Error marshalling returned catalog item %s", err.Error())
 					return
 				}
 				rw.Write([]byte(response))
-				log.Info.Printf("Succesfully sent %d catalog items", len(cis.Items))
+				log.Printf("Succesfully sent %d catalog items", len(cis.Items))
 			}
 		}
 	case "POST":
@@ -398,7 +399,7 @@ func Catalog(rw http.ResponseWriter, req *http.Request) {
 
 func response(status string, code int, message string) []byte {
 	resp := Response{status, code, message}
-	log.Error.Println(resp.Message)
+	log.Println(resp.Message)
 	response, _ := json.MarshalIndent(resp, "", "    ")
 
 	return response
@@ -417,7 +418,7 @@ func mockCheck(req *http.Request) bool {
 func loadCatalog() []byte {
 	file, e := ioutil.ReadFile("./catalog.json")
 	if e != nil {
-		log.Error.Printf("File error: %v\n", e)
+		log.Printf("File error: %v\n", e)
 		os.Exit(1)
 	}
 	return file
