@@ -78,12 +78,15 @@ func main() {
 }
 
 // Get environment variable.  Return error if not set.
-func getenv(name string) (val string, e error) {
+func getenv(name string, dflt string) (val string, e error) {
 	val = os.Getenv(name)
 	if val == "" {
-		s := "Required environment variable not found: %s"
-		log.Printf(s, name)
-		return "", fmt.Errorf(s, name)
+		val = dflt
+		if val == "" {
+			s := "Required environment variable not found: %s"
+			log.Printf(s, name)
+			return "", fmt.Errorf(s, name)
+		}
 	}
 	return val, nil
 }
@@ -91,19 +94,19 @@ func getenv(name string) (val string, e error) {
 func getdbCreds() (creds dbCreds, e error) {
 	var x dbCreds
 
-	x.db_host, e = getenv("SHIPPED_MYSQL_HOST")
+	x.db_host, e = getenv("SHIPPED_MYSQL_HOST", "tcp(127.0.0.1:3306)")
 	if e != nil {
 		return creds, e
 	}
-	x.db_schema, e = getenv("SHIPPED_MYSQL_SCHEMA")
+	x.db_schema, e = getenv("SHIPPED_MYSQL_SCHEMA", "shipped") // database name
 	if e != nil {
 		return creds, e
 	}
-	x.db_user, e = getenv("SHIPPED_MYSQL_USER")
+	x.db_user, e = getenv("SHIPPED_MYSQL_USER", "shipped")
 	if e != nil {
 		return creds, e
 	}
-	x.db_password, e = getenv("SHIPPED_MYSQL_PASSWORD")
+	x.db_password, e = getenv("SHIPPED_MYSQL_PASSWORD", "shipped")
 	if e != nil {
 		return creds, e
 	}
@@ -139,7 +142,6 @@ func getDBObject() (db *sql.DB, e error) {
 // Create the shipped database if it does not exist
 // then populate the catalog table from the json defined rows
 func createDatabase() (e error) {
-	var create_database string = `CREATE DATABASE IF NOT EXISTS %s`
 
 	var create_table string = "" +
 		`
@@ -159,35 +161,8 @@ func createDatabase() (e error) {
 		return e
 	}
 
-	// Initially the shipped catalog db may not exist,
-	// so connect with a database that will always exist.
-	cxn := fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, "information_schema")
+	cxn := fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, creds.db_schema)
 	dbx, e := sql.Open("mysql", cxn)
-	if e != nil {
-		log.Printf("error getting db object: %s", e.Error())
-		return e
-	}
-	defer dbx.Close()
-
-	// The db object does not actually connect to the database.
-	// Therefore, ping the database to ensure we can connect.
-	e = dbx.Ping()
-	if e != nil {
-		log.Printf("Error from db.Ping: %s", e.Error())
-		return e
-	}
-
-	// Create the database
-	_, e = dbx.Exec(fmt.Sprintf(create_database, creds.db_schema))
-	if e != nil {
-		log.Printf("Error creating database: %s", e.Error())
-		os.Exit(1)
-	}
-
-	// Close the old db object and get new one for shipped database.
-	dbx.Close()
-	cxn = fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, creds.db_schema)
-	dbx, e = sql.Open("mysql", cxn)
 	if e != nil {
 		log.Printf("error getting db object: %s", e.Error())
 		return e
