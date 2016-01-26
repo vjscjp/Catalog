@@ -62,13 +62,13 @@ func main() {
 	e := createDatabase()
 	if e != nil {
 		log.Printf("Error creating database: %s", e.Error())
-		os.Exit(1)
+		// os.Exit(1)
 	}
 
 	db, e = getDBObject()
 	if e != nil {
 		log.Printf("Error getting db object: %s", e.Error())
-		os.Exit(1)
+		// os.Exit(1)
 	}
 
 	http.HandleFunc("/v1/catalog/", Catalog)
@@ -94,7 +94,7 @@ func getenv(name string, dflt string) (val string, e error) {
 func getdbCreds() (creds dbCreds, e error) {
 	var x dbCreds
 
-	x.db_host, e = getenv("SHIPPED_MYSQL_HOST", "tcp(127.0.0.1:3306)")
+	x.db_host, e = getenv("SHIPPED_MYSQL_HOST", "mysql")
 	if e != nil {
 		return creds, e
 	}
@@ -102,7 +102,7 @@ func getdbCreds() (creds dbCreds, e error) {
 	if e != nil {
 		return creds, e
 	}
-	x.db_user, e = getenv("SHIPPED_MYSQL_USER", "shipped")
+	x.db_user, e = getenv("SHIPPED_MYSQL_USER", "root")
 	if e != nil {
 		return creds, e
 	}
@@ -394,7 +394,7 @@ func loadCatalog() []byte {
 	file, e := ioutil.ReadFile("./catalog.json")
 	if e != nil {
 		log.Printf("File error: %v\n", e)
-		os.Exit(1)
+		// os.Exit(1)
 	}
 	return file
 }
