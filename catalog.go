@@ -94,7 +94,7 @@ func getenv(name string, dflt string) (val string, e error) {
 func getdbCreds() (creds dbCreds, e error) {
 	var x dbCreds
 
-	x.db_host, e = getenv("SHIPPED_MYSQL_HOST", "mysql")
+	x.db_host, e = getenv("SHIPPED_MYSQL_HOST", "tcp(mysql:3306)")
 	if e != nil {
 		return creds, e
 	}
@@ -175,6 +175,8 @@ func createDatabase() (e error) {
 	if e != nil {
 		log.Printf("Error from db.Ping: %s", e.Error())
 		return e
+	} else {
+		log.Printf("Success connecting to database:  %s:********@%s/%s", creds.db_user, creds.db_host, creds.db_schema)
 	}
 
 	// Create the catalog table
