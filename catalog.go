@@ -67,7 +67,7 @@ func main() {
 	http.HandleFunc("/v1/catalog/", Catalog)
 	http.HandleFunc("/", HandleIndex)
 
-	http.ListenAndServe(":8000", nil)
+	http.ListenAndServe(":8888", nil)
 }
 
 // Get environment variable.  Return error if not set.
