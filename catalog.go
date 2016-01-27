@@ -142,6 +142,8 @@ func getDBObject() (db *sql.DB, e error) {
 // then populate the catalog table from the json defined rows
 func createDatabase() (e error) {
 
+	var create_database string = `CREATE DATABASE IF NOT EXISTS %s`
+
 	var create_table string = "" +
 		`
 		CREATE TABLE IF NOT EXISTS catalog
@@ -160,8 +162,35 @@ func createDatabase() (e error) {
 		return e
 	}
 
-	cxn := fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, creds.db_schema)
+	// Initially the shipped catalog db may not exist,
+	// so connect with a database that will always exist.
+	cxn := fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, "information_schema")
 	dbx, e := sql.Open("mysql", cxn)
+	if e != nil {
+		log.Printf("error getting db object: %s", e.Error())
+		return e
+	}
+	defer dbx.Close()
+
+	// The db object does not actually connect to the database.
+	// Therefore, ping the database to ensure we can connect.
+	e = dbx.Ping()
+	if e != nil {
+		log.Printf("Error from db.Ping: %s", e.Error())
+		return e
+	}
+
+	// Create the database
+	_, e = dbx.Exec(fmt.Sprintf(create_database, creds.db_schema))
+	if e != nil {
+		log.Printf("Error creating database: %s", e.Error())
+		return e
+	}
+	dbx.Close()
+
+	// Get new db object for shipped database.
+	cxn = fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, creds.db_schema)
+	dbx, e = sql.Open("mysql", cxn)
 	if e != nil {
 		log.Printf("error getting db object: %s", e.Error())
 		return e
