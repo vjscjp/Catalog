@@ -16,7 +16,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-var db *sql.DB // Database object designed to be long lived
+var DB *sql.DB // Database object
 
 type CatalogType struct {
 	Items []struct {
@@ -58,15 +58,11 @@ const success = "SUCCESS"
 
 func main() {
 
-	e := createDatabase()
+	db, e := createDatabase()
 	if e != nil {
 		log.Printf("Error creating database: %s", e.Error())
 	}
-
-	db, e = getDBObject()
-	if e != nil {
-		log.Printf("Error getting db object: %s", e.Error())
-	}
+	DB = db
 
 	http.HandleFunc("/v1/catalog/", Catalog)
 	http.HandleFunc("/", HandleIndex)
@@ -110,37 +106,9 @@ func getdbCreds() (creds dbCreds, e error) {
 	return x, nil
 }
 
-// Get a (long lived) database object
-func getDBObject() (db *sql.DB, e error) {
-	creds, e := getdbCreds()
-	if e != nil {
-		log.Printf("Error getting database creds: %s", e.Error())
-		return
-	}
-
-	// Create the db object
-	cxn := fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, creds.db_schema)
-	dbx, e := sql.Open("mysql", cxn)
-	if e != nil {
-		log.Printf("error getting db object: %s", e.Error())
-		return
-	}
-
-	// The db object does not actually connect to the database.
-	// Therefore, ping the database to ensure we can connect.
-	e = dbx.Ping()
-	if e != nil {
-		log.Printf("Error from db.Ping: %s", e.Error())
-		return
-	} else {
-		log.Printf("Successfully connected to database")
-	}
-	return dbx, nil
-}
-
 // Create the shipped database if it does not exist
 // then populate the catalog table from the json defined rows
-func createDatabase() (e error) {
+func createDatabase() (db *sql.DB, e error) {
 
 	var create_database string = `CREATE DATABASE IF NOT EXISTS %s`
 
@@ -159,7 +127,8 @@ func createDatabase() (e error) {
 
 	creds, e := getdbCreds()
 	if e != nil {
-		return e
+		log.Printf("Error getting creds: %s", e.Error())
+		return db, e
 	}
 
 	// Initially the shipped catalog db may not exist,
@@ -167,24 +136,23 @@ func createDatabase() (e error) {
 	cxn := fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, "information_schema")
 	dbx, e := sql.Open("mysql", cxn)
 	if e != nil {
-		log.Printf("error getting db object: %s", e.Error())
-		return e
+		log.Printf("Error getting db object: %s", e.Error())
+		return db, e
 	}
-	defer dbx.Close()
 
 	// The db object does not actually connect to the database.
 	// Therefore, ping the database to ensure we can connect.
 	e = dbx.Ping()
 	if e != nil {
-		log.Printf("Error from db.Ping: %s", e.Error())
-		return e
+		log.Printf("Error from DB.Ping: %s", e.Error())
+		return db, e
 	}
 
 	// Create the database
 	_, e = dbx.Exec(fmt.Sprintf(create_database, creds.db_schema))
 	if e != nil {
 		log.Printf("Error creating database: %s", e.Error())
-		return e
+		return db, e
 	}
 	dbx.Close()
 
@@ -193,16 +161,15 @@ func createDatabase() (e error) {
 	dbx, e = sql.Open("mysql", cxn)
 	if e != nil {
 		log.Printf("error getting db object: %s", e.Error())
-		return e
+		return db, e
 	}
-	defer dbx.Close()
 
 	// The db object does not actually connect to the database.
 	// Therefore, ping the database to ensure we can connect.
 	e = dbx.Ping()
 	if e != nil {
-		log.Printf("Error from db.Ping: %s", e.Error())
-		return e
+		log.Printf("Error from DB.Ping: %s", e.Error())
+		return db, e
 	} else {
 		log.Printf("Success connecting to database:  %s:********@%s/%s", creds.db_user, creds.db_host, creds.db_schema)
 	}
@@ -211,7 +178,7 @@ func createDatabase() (e error) {
 	_, e = dbx.Exec(create_table)
 	if e != nil {
 		log.Printf("Error creating database: %s", e.Error())
-		return e
+		return db, e
 	}
 
 	// Get database rows defined as json
@@ -219,7 +186,7 @@ func createDatabase() (e error) {
 	file, e := ioutil.ReadFile("./catalog.json")
 	if e != nil {
 		log.Printf("Error reading catalog json file: %s", e.Error())
-		return e
+		return db, e
 	}
 	json.Unmarshal(file, &cis)
 
@@ -227,7 +194,7 @@ func createDatabase() (e error) {
 	tx, e := dbx.Begin()
 	if e != nil {
 		log.Printf("Error getting database transaction: %s", e.Error())
-		return e
+		return db, e
 	}
 	defer tx.Rollback()
 
@@ -235,7 +202,7 @@ func createDatabase() (e error) {
 	stmt, e := tx.Prepare(insert_table)
 	if e != nil {
 		log.Printf("Error creating prepared statement: %s", e.Error())
-		return e
+		return db, e
 	}
 	defer stmt.Close()
 
@@ -244,26 +211,24 @@ func createDatabase() (e error) {
 		_, e = stmt.Exec(item.ItemID, item.Name, item.Description, item.Price, item.Image)
 		if e != nil {
 			log.Printf("Error inserting row into catalog table: %s", e.Error())
-			return e
+			return db, e
 		}
 	}
 
 	e = tx.Commit()
 	if e != nil {
 		log.Printf("Error during transaction commit: %s", e.Error())
-		return e
+		return db, e
 	}
 
 	stmt.Close()
-	dbx.Close()
-
-	return nil
+	return dbx, nil
 }
 
 // Get a single catalog row
 func getCatalogItem(item int) (ci CatalogItem, e error) {
 	//var ci CatalogItem
-	e = db.QueryRow("SELECT item_id, name, description, price, image FROM catalog WHERE item_id = ?", item).Scan(
+	e = DB.QueryRow("SELECT item_id, name, description, price, image FROM catalog WHERE item_id = ?", item).Scan(
 		&ci.ItemID, &ci.Name, &ci.Description, &ci.Price, &ci.Image)
 	if e != nil {
 		log.Printf("Error reading database row for item %d: %s", item, e.Error())
@@ -275,9 +240,9 @@ func getCatalogItem(item int) (ci CatalogItem, e error) {
 // Get the whole catalog from the database
 func getCatalog() (cat CatalogItems, e error) {
 
-	rows, e := db.Query("SELECT  item_id, name, description, price, image FROM catalog")
+	rows, e := DB.Query("SELECT  item_id, name, description, price, image FROM catalog")
 	if e != nil {
-		log.Printf("Error from db.Query: %s", e.Error())
+		log.Printf("Error from DB.Query: %s", e.Error())
 		return
 	}
 	defer rows.Close()
