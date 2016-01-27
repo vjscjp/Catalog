@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path"
 	"strconv"
 	"strings"
 	"text/template"
-
-	"log"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -62,13 +61,11 @@ func main() {
 	e := createDatabase()
 	if e != nil {
 		log.Printf("Error creating database: %s", e.Error())
-		// os.Exit(1)
 	}
 
 	db, e = getDBObject()
 	if e != nil {
 		log.Printf("Error getting db object: %s", e.Error())
-		// os.Exit(1)
 	}
 
 	http.HandleFunc("/v1/catalog/", Catalog)
@@ -135,6 +132,8 @@ func getDBObject() (db *sql.DB, e error) {
 	if e != nil {
 		log.Printf("Error from db.Ping: %s", e.Error())
 		return
+	} else {
+		log.Printf("Successfully connected to database")
 	}
 	return dbx, nil
 }
@@ -396,7 +395,6 @@ func loadCatalog() []byte {
 	file, e := ioutil.ReadFile("./catalog.json")
 	if e != nil {
 		log.Printf("File error: %v\n", e)
-		// os.Exit(1)
 	}
 	return file
 }
