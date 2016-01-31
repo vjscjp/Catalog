@@ -66,8 +66,10 @@ func main() {
 
 	http.HandleFunc("/v1/catalog/", Catalog)
 	http.HandleFunc("/", HandleIndex)
-
-	http.ListenAndServe(":8888", nil)
+	// The default listening port should be set to something suitable.
+	// 8888 was chosen so we could test Catalog by copying into the golang buildpack.
+	listenPort, _ := getenv("SHIPPED_CATALOG_LISTEN_PORT", "8888")
+	http.ListenAndServe(fmt.Sprintf(":%s", listenPort), nil)
 }
 
 // Get environment variable.  Return error if not set.
