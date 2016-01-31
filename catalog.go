@@ -68,44 +68,27 @@ func main() {
 	http.HandleFunc("/", HandleIndex)
 	// The default listening port should be set to something suitable.
 	// 8888 was chosen so we could test Catalog by copying into the golang buildpack.
-	listenPort, _ := getenv("SHIPPED_CATALOG_LISTEN_PORT", "8888")
+	listenPort := getenv("SHIPPED_CATALOG_LISTEN_PORT", "8888")
 	http.ListenAndServe(fmt.Sprintf(":%s", listenPort), nil)
 }
 
-// Get environment variable.  Return error if not set.
-func getenv(name string, dflt string) (val string, e error) {
+// Get environment variable.  Return default if not set.
+func getenv(name string, dflt string) (val string) {
 	val = os.Getenv(name)
 	if val == "" {
 		val = dflt
-		if val == "" {
-			s := "Required environment variable not found: %s"
-			log.Printf(s, name)
-			return "", fmt.Errorf(s, name)
-		}
 	}
-	return val, nil
+	return val
 }
 
-func getdbCreds() (creds dbCreds, e error) {
+func getdbCreds() (creds dbCreds) {
 	var x dbCreds
 
-	x.db_host, e = getenv("SHIPPED_MYSQL_HOST", "tcp(mysql:3306)")
-	if e != nil {
-		return creds, e
-	}
-	x.db_schema, e = getenv("SHIPPED_MYSQL_SCHEMA", "shipped") // database name
-	if e != nil {
-		return creds, e
-	}
-	x.db_user, e = getenv("SHIPPED_MYSQL_USER", "root")
-	if e != nil {
-		return creds, e
-	}
-	x.db_password, e = getenv("SHIPPED_MYSQL_PASSWORD", "shipped")
-	if e != nil {
-		return creds, e
-	}
-	return x, nil
+	x.db_host = getenv("SHIPPED_MYSQL_HOST", "tcp(mysql:3306)")
+	x.db_schema = getenv("SHIPPED_MYSQL_SCHEMA", "shipped") // database name
+	x.db_user = getenv("SHIPPED_MYSQL_USER", "root")
+	x.db_password = getenv("SHIPPED_MYSQL_PASSWORD", "shipped")
+	return x
 }
 
 // Create the shipped database if it does not exist
@@ -127,7 +110,7 @@ func createDatabase() (db *sql.DB, e error) {
 
 	var insert_table string = `INSERT IGNORE INTO catalog (item_id, name, description, price, image) VALUES (?,?,?,?,?)`
 
-	creds, e := getdbCreds()
+	creds := getdbCreds()
 	if e != nil {
 		log.Printf("Error getting creds: %s", e.Error())
 		return db, e
