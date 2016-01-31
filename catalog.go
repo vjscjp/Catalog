@@ -81,23 +81,22 @@ func getenv(name string, dflt string) (val string) {
 	return val
 }
 
-func getdbCreds() (creds dbCreds) {
+func getdbCreds() (creds *dbCreds) {
 	var x dbCreds
 
 	x.db_host = getenv("SHIPPED_MYSQL_HOST", "tcp(mysql:3306)")
 	x.db_schema = getenv("SHIPPED_MYSQL_SCHEMA", "shipped") // database name
 	x.db_user = getenv("SHIPPED_MYSQL_USER", "root")
 	x.db_password = getenv("SHIPPED_MYSQL_PASSWORD", "shipped")
-	return x
+	return &x
 }
 
 // Create the shipped database if it does not exist
 // then populate the catalog table from the json defined rows
 func createDatabase() (db *sql.DB, e error) {
 
-	var create_database string = `CREATE DATABASE IF NOT EXISTS %s`
-
-	var create_table string = "" +
+	const create_database string = `CREATE DATABASE IF NOT EXISTS %s`
+	const create_table string = "" +
 		`
 		CREATE TABLE IF NOT EXISTS catalog
 		(
@@ -107,17 +106,11 @@ func createDatabase() (db *sql.DB, e error) {
 		price   FLOAT NOT NULL,
 		image   VARCHAR(255)
 		)`
-
-	var insert_table string = `INSERT IGNORE INTO catalog (item_id, name, description, price, image) VALUES (?,?,?,?,?)`
-
-	creds := getdbCreds()
-	if e != nil {
-		log.Printf("Error getting creds: %s", e.Error())
-		return db, e
-	}
+	const insert_table string = `INSERT IGNORE INTO catalog (item_id, name, description, price, image) VALUES (?,?,?,?,?)`
 
 	// Initially the shipped catalog db may not exist,
 	// so connect with a database that will always exist.
+	creds := getdbCreds()
 	cxn := fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, "information_schema")
 	dbx, e := sql.Open("mysql", cxn)
 	if e != nil {
@@ -212,7 +205,6 @@ func createDatabase() (db *sql.DB, e error) {
 
 // Get a single catalog row
 func getCatalogItem(item int) (ci CatalogItem, e error) {
-	//var ci CatalogItem
 	e = DB.QueryRow("SELECT item_id, name, description, price, image FROM catalog WHERE item_id = ?", item).Scan(
 		&ci.ItemID, &ci.Name, &ci.Description, &ci.Price, &ci.Image)
 	if e != nil {
@@ -253,10 +245,10 @@ func getCatalog() (cat CatalogItems, e error) {
 	return cis, nil
 }
 
-const delete_sql = `DELETE FROM catalog WHERE item_id = ?`
-
 // Delete row from catalog table
 func deleteCatalogItem(item_id int) (rows int64, e error) {
+	const delete_sql = `DELETE FROM catalog WHERE item_id = ?`
+
 	res, err := DB.Exec(delete_sql, item_id)
 	if err != nil {
 		log.Printf("Error deleting row %d:  %s", item_id, err.Error())
@@ -377,10 +369,8 @@ func Catalog(rw http.ResponseWriter, req *http.Request) {
 				// Send full catalog
 				rw.Write([]byte(file))
 			}
-		} else {
-			// Perform DB
-			if itemNumber > 0 {
-				// Send Item
+		} else { // No mock. Use MySQL DB.
+			if itemNumber > 0 { // Send single Item
 				ci, e := getCatalogItem(itemNumber)
 				if e != nil {
 					rw.WriteHeader(http.StatusBadRequest)
@@ -396,8 +386,7 @@ func Catalog(rw http.ResponseWriter, req *http.Request) {
 				rw.WriteHeader(http.StatusOK)
 				rw.Write([]byte(resp))
 				log.Printf("Succesfully sent item_number: %d", itemNumber)
-			} else {
-				// Send whole Catalog
+			} else { // Send whole Catalog
 				cis, e := getCatalog()
 				if e != nil {
 					log.Printf("Error getting catalog items: %s", e.Error())
