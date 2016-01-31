@@ -122,7 +122,7 @@ func createDatabase() (db *sql.DB, e error) {
 	// Therefore, ping the database to ensure we can connect.
 	e = dbx.Ping()
 	if e != nil {
-		log.Printf("Error from DB.Ping: %s", e.Error())
+		log.Printf("Error from DB.Ping 1: %s", e.Error())
 		return db, e
 	}
 
@@ -146,7 +146,7 @@ func createDatabase() (db *sql.DB, e error) {
 	// Therefore, ping the database to ensure we can connect.
 	e = dbx.Ping()
 	if e != nil {
-		log.Printf("Error from DB.Ping: %s", e.Error())
+		log.Printf("Error from DB.Ping 2: %s", e.Error())
 		return db, e
 	} else {
 		log.Printf("Success connecting to database:  %s:********@%s/%s", creds.db_user, creds.db_host, creds.db_schema)
