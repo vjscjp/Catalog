@@ -17,6 +17,7 @@ import (
 )
 
 var DB *sql.DB // Database object
+const port = 8888
 
 type CatalogType struct {
 	Items []struct {
@@ -66,8 +67,8 @@ func main() {
 
 	http.HandleFunc("/v1/catalog/", Catalog)
 	http.HandleFunc("/", HandleIndex)
-
-	http.ListenAndServe(":8888", nil)
+	fmt.Println("Listening on Port: " + strconv.Itoa(port))
+	http.ListenAndServe(":"+strconv.Itoa(port), nil)
 }
 
 // Get environment variable.  Return error if not set.
@@ -271,6 +272,7 @@ func getCatalog() (cat CatalogItems, e error) {
 // Catalog this will return an item or the whole list
 func Catalog(rw http.ResponseWriter, req *http.Request) {
 	rw.Header().Set("Content-Type", "application/json")
+	rw.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// Load JSON File
 	var catalog CatalogType
@@ -310,6 +312,7 @@ func Catalog(rw http.ResponseWriter, req *http.Request) {
 				}
 			} else {
 				// Send full catalog
+				log.Println("Succesfully sent full catalog.")
 				rw.Write([]byte(file))
 			}
 		} else {
