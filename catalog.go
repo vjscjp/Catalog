@@ -17,7 +17,6 @@ import (
 )
 
 var DB *sql.DB // Database object
-const port = 8888
 
 type CatalogType struct {
 	Items []struct {
@@ -67,53 +66,39 @@ func main() {
 
 	http.HandleFunc("/v1/catalog/", Catalog)
 	http.HandleFunc("/", HandleIndex)
-	fmt.Println("Listening on Port: " + strconv.Itoa(port))
-	http.ListenAndServe(":"+strconv.Itoa(port), nil)
+
+	// The default listening port should be set to something suitable.
+	// 8888 was chosen so we could test Catalog by copying into the golang buildpack.
+	listenPort := getenv("SHIPPED_CATALOG_LISTEN_PORT", "8888")
+	log.Println("Listening on Port: " + listenPort)
+	http.ListenAndServe(fmt.Sprintf(":%s", listenPort), nil)
 }
 
-// Get environment variable.  Return error if not set.
-func getenv(name string, dflt string) (val string, e error) {
+// Get environment variable.  Return default if not set.
+func getenv(name string, dflt string) (val string) {
 	val = os.Getenv(name)
 	if val == "" {
 		val = dflt
-		if val == "" {
-			s := "Required environment variable not found: %s"
-			log.Printf(s, name)
-			return "", fmt.Errorf(s, name)
-		}
 	}
-	return val, nil
+	return val
 }
 
-func getdbCreds() (creds dbCreds, e error) {
+func getdbCreds() (creds *dbCreds) {
 	var x dbCreds
 
-	x.db_host, e = getenv("SHIPPED_MYSQL_HOST", "tcp(mysql:3306)")
-	if e != nil {
-		return creds, e
-	}
-	x.db_schema, e = getenv("SHIPPED_MYSQL_SCHEMA", "shipped") // database name
-	if e != nil {
-		return creds, e
-	}
-	x.db_user, e = getenv("SHIPPED_MYSQL_USER", "root")
-	if e != nil {
-		return creds, e
-	}
-	x.db_password, e = getenv("SHIPPED_MYSQL_PASSWORD", "shipped")
-	if e != nil {
-		return creds, e
-	}
-	return x, nil
+	x.db_host = getenv("SHIPPED_MYSQL_HOST", "tcp(mysql:3306)")
+	x.db_schema = getenv("SHIPPED_MYSQL_SCHEMA", "shipped") // database name
+	x.db_user = getenv("SHIPPED_MYSQL_USER", "root")
+	x.db_password = getenv("SHIPPED_MYSQL_PASSWORD", "shipped")
+	return &x
 }
 
 // Create the shipped database if it does not exist
 // then populate the catalog table from the json defined rows
 func createDatabase() (db *sql.DB, e error) {
 
-	var create_database string = `CREATE DATABASE IF NOT EXISTS %s`
-
-	var create_table string = "" +
+	const create_database string = `CREATE DATABASE IF NOT EXISTS %s`
+	const create_table string = "" +
 		`
 		CREATE TABLE IF NOT EXISTS catalog
 		(
@@ -123,17 +108,11 @@ func createDatabase() (db *sql.DB, e error) {
 		price   FLOAT NOT NULL,
 		image   VARCHAR(255)
 		)`
-
-	var insert_table string = `INSERT IGNORE INTO catalog (item_id, name, description, price, image) VALUES (?,?,?,?,?)`
-
-	creds, e := getdbCreds()
-	if e != nil {
-		log.Printf("Error getting creds: %s", e.Error())
-		return db, e
-	}
+	const insert_table string = `INSERT IGNORE INTO catalog (item_id, name, description, price, image) VALUES (?,?,?,?,?)`
 
 	// Initially the shipped catalog db may not exist,
 	// so connect with a database that will always exist.
+	creds := getdbCreds()
 	cxn := fmt.Sprintf("%s:%s@%s/%s", creds.db_user, creds.db_password, creds.db_host, "information_schema")
 	dbx, e := sql.Open("mysql", cxn)
 	if e != nil {
@@ -145,7 +124,7 @@ func createDatabase() (db *sql.DB, e error) {
 	// Therefore, ping the database to ensure we can connect.
 	e = dbx.Ping()
 	if e != nil {
-		log.Printf("Error from DB.Ping: %s", e.Error())
+		log.Printf("Error from DB.Ping 1: %s", e.Error())
 		return db, e
 	}
 
@@ -169,7 +148,7 @@ func createDatabase() (db *sql.DB, e error) {
 	// Therefore, ping the database to ensure we can connect.
 	e = dbx.Ping()
 	if e != nil {
-		log.Printf("Error from DB.Ping: %s", e.Error())
+		log.Printf("Error from DB.Ping 2: %s", e.Error())
 		return db, e
 	} else {
 		log.Printf("Success connecting to database:  %s:********@%s/%s", creds.db_user, creds.db_host, creds.db_schema)
@@ -228,7 +207,6 @@ func createDatabase() (db *sql.DB, e error) {
 
 // Get a single catalog row
 func getCatalogItem(item int) (ci CatalogItem, e error) {
-	//var ci CatalogItem
 	e = DB.QueryRow("SELECT item_id, name, description, price, image FROM catalog WHERE item_id = ?", item).Scan(
 		&ci.ItemID, &ci.Name, &ci.Description, &ci.Price, &ci.Image)
 	if e != nil {
@@ -269,6 +247,91 @@ func getCatalog() (cat CatalogItems, e error) {
 	return cis, nil
 }
 
+// Delete row from catalog table
+func deleteCatalogItem(item_id int) (rows int64, e error) {
+	const delete_sql = `DELETE FROM catalog WHERE item_id = ?`
+
+	res, err := DB.Exec(delete_sql, item_id)
+	if err != nil {
+		log.Printf("Error deleting row %d:  %s", item_id, err.Error())
+		return 0, err
+	}
+	rowCnt, err := res.RowsAffected()
+	if err != nil {
+		log.Printf("Error fetching count of rows deleted: %s", err.Error())
+		return 0, err
+	}
+	return rowCnt, nil
+}
+
+// Add an item to the catalog
+func addCatalogItem(req *http.Request) (e error) {
+	const insert_sql = `INSERT INTO catalog (item_id, name, description, price, image) VALUES (?,?,?,?,?)`
+	req.ParseForm()
+
+	item_id := strings.Join(req.Form["item_id"], "")
+	name := strings.Join(req.Form["name"], "")
+	desc := strings.Join(req.Form["description"], "")
+	price := strings.Join(req.Form["price"], "")
+	image := strings.Join(req.Form["image"], "")
+
+	_, err := DB.Exec(insert_sql, item_id, name, desc, price, image)
+	if err != nil {
+		log.Printf("Error inserting row: %s", err.Error())
+		return err
+	}
+	return nil
+}
+
+func updateCatalogItem(req *http.Request) (e error) {
+	const update_sql = `UPDATE catalog SET name=?, description=?, price=?, image=? WHERE item_id=?`
+	var ci CatalogItem
+
+	// Get existing item so we can update the fields that changed
+	itemNumber := getItemNumber(req)
+	ci, e = getCatalogItem(itemNumber)
+	if e != nil {
+		log.Printf("Error getting row for update: %s", e.Error())
+		return e
+	}
+
+	name := ci.Name
+	desc := ci.Description
+	price := ci.Price
+	image := ci.Image
+
+	req.ParseForm()
+
+	if len(req.Form["name"]) > 0 {
+		name = strings.Join(req.Form["name"], "")
+	}
+	if len(req.Form["description"]) > 0 {
+		desc = strings.Join(req.Form["description"], "")
+	}
+	if len(req.Form["image"]) > 0 {
+		desc = strings.Join(req.Form["image"], "")
+	}
+	if len(req.Form["price"]) > 0 {
+		desc = strings.Join(req.Form["price"], "")
+	}
+	_, e = DB.Exec(update_sql, name, desc, price, image, itemNumber)
+	if e != nil {
+		log.Printf("Error updating row: %s", e.Error())
+		return e
+	}
+	return nil
+}
+
+//  Get item number
+func getItemNumber(req *http.Request) int {
+	var itemNumber = 0
+	uriSegments := strings.Split(req.URL.Path, "/")
+	if len(uriSegments) >= 3 {
+		itemNumber, _ = strconv.Atoi(uriSegments[3])
+	}
+	return itemNumber
+}
+
 // Catalog this will return an item or the whole list
 func Catalog(rw http.ResponseWriter, req *http.Request) {
 	rw.Header().Set("Content-Type", "application/json")
@@ -280,29 +343,24 @@ func Catalog(rw http.ResponseWriter, req *http.Request) {
 	json.Unmarshal(file, &catalog)
 
 	switch req.Method {
-	//curl -X GET -H "Content-Type: application/json" http://localhost:8000/v1/catalog/3?mock=true
+	//curl -X GET -H "Content-Type: application/json" http://localhost:8888/v1/catalog/3?mock=true
 	case "GET":
-		// Check Parameter
-		uriSegments := strings.Split(req.URL.Path, "/")
 
-		//  Get item number
-		var itemNumber = 0
-		if len(uriSegments) >= 3 {
-			itemNumber, _ = strconv.Atoi(uriSegments[3])
-		}
+		itemNumber := getItemNumber(req)
+
 		// Check if mock is set true
 		mock := mockCheck(req)
 		if mock == true {
 			if itemNumber > 0 {
 				// Send catalog by item_id
 				if len(catalog.Items) >= itemNumber {
-					response, err := json.MarshalIndent(catalog.Items[itemNumber-1], "", "    ")
+					resp, err := json.MarshalIndent(catalog.Items[itemNumber-1], "", "    ")
 					if err != nil {
 						log.Println(err)
 						return
 					}
 					rw.WriteHeader(http.StatusAccepted)
-					rw.Write([]byte(response))
+					rw.Write([]byte(resp))
 					log.Println("Succesfully sent item_number:", itemNumber)
 				} else {
 					// item_id not found
@@ -315,58 +373,94 @@ func Catalog(rw http.ResponseWriter, req *http.Request) {
 				log.Println("Succesfully sent full catalog.")
 				rw.Write([]byte(file))
 			}
-		} else {
-			// Perform DB
-			if itemNumber > 0 {
-				// Send Item
+		} else { // No mock. Use MySQL DB.
+			if itemNumber > 0 { // Send single Item
 				ci, e := getCatalogItem(itemNumber)
 				if e != nil {
-					response := fmt.Sprintf("Error from database retrieving item_id %d: %s", itemNumber, e.Error())
-					rw.Write([]byte(response))
+					rw.WriteHeader(http.StatusBadRequest)
+					rw.Write(response(errors, http.StatusBadRequest,
+						fmt.Sprintf("Error from database retrieving item_id %d: %s", itemNumber, e.Error())))
 					return
 				}
-				response, err := json.MarshalIndent(ci, "", "    ")
+				resp, err := json.MarshalIndent(ci, "", "    ")
 				if err != nil {
 					log.Printf("Error marshalling returned catalog item %s", err.Error())
 					return
 				}
-				rw.Write([]byte(response))
+				rw.WriteHeader(http.StatusOK)
+				rw.Write([]byte(resp))
 				log.Printf("Succesfully sent item_number: %d", itemNumber)
-			} else {
-				// Send Catalog
+			} else { // Send whole Catalog
 				cis, e := getCatalog()
 				if e != nil {
 					log.Printf("Error getting catalog items: %s", e.Error())
 					return
 				}
-				response, err := json.MarshalIndent(cis.Items, "", "    ")
+				resp, err := json.MarshalIndent(cis.Items, "", "    ")
 				if err != nil {
 					log.Printf("Error marshalling returned catalog item %s", err.Error())
 					return
 				}
-				rw.Write([]byte(response))
+				rw.WriteHeader(http.StatusOK)
+				rw.Write([]byte(resp))
 				log.Printf("Succesfully sent %d catalog items", len(cis.Items))
 			}
 		}
-	case "POST":
-		rw.WriteHeader(http.StatusMethodNotAllowed)
-		err := response(errors, http.StatusMethodNotAllowed, req.Method+" not allowed")
-		rw.Write(err)
-	case "PUT":
-		// Update an existing record.
-		rw.WriteHeader(http.StatusMethodNotAllowed)
-		err := response(errors, http.StatusMethodNotAllowed, req.Method+" not allowed")
-		rw.Write(err)
-	case "DELETE":
-		// Remove the record.
-		rw.WriteHeader(http.StatusMethodNotAllowed)
-		err := response(errors, http.StatusMethodNotAllowed, req.Method+" not allowed")
-		rw.Write(err)
+
+	case "POST": // Create new record
+		itemNumber := getItemNumber(req)
+		if itemNumber > 0 {
+			rw.WriteHeader(http.StatusBadRequest)
+			rw.Write(response(errors, http.StatusBadRequest, fmt.Sprintf("Item number must not appear on URL")))
+			return
+		}
+		err := addCatalogItem(req)
+		if err != nil {
+			rw.WriteHeader(http.StatusBadRequest)
+			rw.Write(response(errors, http.StatusBadRequest, fmt.Sprintf("Error adding item to catalog: %s", err.Error())))
+			return
+		}
+		rw.WriteHeader(http.StatusCreated)
+		rw.Write(response(success, http.StatusCreated, ""))
+		return
+
+	case "PUT": // Update existing record
+		itemNumber := getItemNumber(req)
+		if itemNumber <= 0 {
+			rw.WriteHeader(http.StatusBadRequest)
+			rw.Write(response(errors, http.StatusBadRequest, fmt.Sprintf("Item number must appear on URL")))
+			return
+		}
+		err := updateCatalogItem(req)
+		if err != nil {
+			rw.WriteHeader(http.StatusBadRequest)
+			rw.Write(response(errors, http.StatusBadRequest, fmt.Sprintf("Error updating item in catalog: %s", err.Error())))
+			return
+		}
+		rw.WriteHeader(http.StatusOK)
+		rw.Write(response(success, http.StatusOK, ""))
+		return
+
+	case "DELETE": // Remove record.
+		itemNumber := getItemNumber(req)
+		if itemNumber <= 0 {
+			rw.WriteHeader(http.StatusBadRequest)
+			rw.Write(response(errors, http.StatusBadRequest, fmt.Sprintf("Invalid item number: %d", itemNumber)))
+			return
+		}
+		rowCnt, err := deleteCatalogItem(itemNumber)
+		if err != nil {
+			rw.WriteHeader(http.StatusBadRequest)
+			rw.Write(response(errors, http.StatusBadRequest, fmt.Sprintf("Error deleting item_id %d:  %s", itemNumber, err.Error())))
+			return
+		}
+		rw.WriteHeader(http.StatusOK)
+		rw.Write(response(success, http.StatusOK, fmt.Sprintf("Rows affected: %d", rowCnt)))
+
 	default:
 		// Give an error message.
-		rw.WriteHeader(http.StatusBadRequest)
-		err := response(errors, http.StatusBadRequest, "Bad request")
-		rw.Write(err)
+		rw.WriteHeader(http.StatusMethodNotAllowed)
+		rw.Write(response(errors, http.StatusMethodNotAllowed, req.Method+" not allowed"))
 	}
 }
 
